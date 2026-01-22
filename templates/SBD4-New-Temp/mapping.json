@@ -1,0 +1,101 @@
+{
+  "templateId": "SBD4-New-Temp",
+  "pageSize": "A4",
+  "fields": {
+    "dash": [
+      {
+        "page": 0,
+        "xRatio": 0.7659746018947793,
+        "yRatio": 0.589034587609274,
+        "type": "text",
+        "color": "#000000"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.7726936773499966,
+        "yRatio": 0.9026035727860129,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "cancel": [
+      {
+        "page": 1,
+        "xRatio": 0.726779995072678,
+        "yRatio": 0.7386925123527176,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "Larreth Jimu is also a Director at Melsoft Academy": [
+      {
+        "page": 1,
+        "xRatio": 0.4087437568590562,
+        "yRatio": 0.8566768022298239,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "Siphiwe Mabena is also a Director at SascomX": [
+      {
+        "page": 1,
+        "xRatio": 0.40314452731304173,
+        "yRatio": 0.8368807804383631,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "directorName": [
+      {
+        "page": 1,
+        "xRatio": 0.253085175479854,
+        "yRatio": 0.5945774737108831,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "directorPosition": [
+      {
+        "page": 1,
+        "xRatio": 0.46921543595601245,
+        "yRatio": 0.5929937919675662,
+        "type": "text",
+        "color": "#000000"
+      },
+      {
+        "page": 2,
+        "xRatio": 0.20493180138412953,
+        "yRatio": 0.44491954896743946,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "signature": [
+      {
+        "page": 2,
+        "xRatio": 0.20493180138412953,
+        "yRatio": 0.5050994552134802,
+        "type": "signature",
+        "color": "#000000"
+      }
+    ],
+    "currentDate": [
+      {
+        "page": 2,
+        "xRatio": 0.5834397186947076,
+        "yRatio": 0.49322184213860376,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "legalName": [
+      {
+        "page": 2,
+        "xRatio": 0.5431252659634034,
+        "yRatio": 0.44333586722412255,
+        "type": "text",
+        "color": "#000000"
+      }
+    ]
+  }
+}

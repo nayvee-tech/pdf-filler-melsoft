@@ -1,0 +1,59 @@
+{
+  "templateId": "template-22",
+  "pageSize": "A4",
+  "fields": {
+    "signature": [
+      {
+        "page": 2,
+        "xRatio": 0.18925395865528902,
+        "yRatio": 0.5169770682883568,
+        "type": "signature",
+        "widthRatio": 0.22172949002217293
+      }
+    ],
+    "date": [
+      {
+        "page": 2,
+        "xRatio": 0.578960335057896,
+        "yRatio": 0.48926263778031165,
+        "type": "text"
+      }
+    ],
+    "directorPosition": [
+      {
+        "page": 2,
+        "xRatio": 0.210531030930144,
+        "yRatio": 0.44254402635246415,
+        "type": "text"
+      }
+    ],
+    "bidderName": [
+      {
+        "page": 2,
+        "xRatio": 0.5464848036910122,
+        "yRatio": 0.44016850373748884,
+        "type": "text"
+      }
+    ],
+    "dash": [
+      {
+        "page": 1,
+        "xRatio": 0.7670944478039822,
+        "yRatio": 0.7379006714810592,
+        "type": "text"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.7301395328002867,
+        "yRatio": 0.9026035727860129,
+        "type": "text"
+      },
+      {
+        "page": 0,
+        "xRatio": 0.7659746018947793,
+        "yRatio": 0.589034587609274,
+        "type": "text"
+      }
+    ]
+  }
+}

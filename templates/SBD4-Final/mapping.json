@@ -1,0 +1,107 @@
+{
+  "templateId": "SBD4-Final",
+  "pageSize": "A4",
+  "fields": {
+    "dash": [
+      {
+        "page": 0,
+        "xRatio": 0.7670944478039822,
+        "yRatio": 0.589034587609274,
+        "type": "text",
+        "color": "#000000"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.7715738314407937,
+        "yRatio": 0.9026035727860129,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "Larreth-Director": [
+      {
+        "page": 1,
+        "xRatio": 0.42890098322470827,
+        "yRatio": 0.8645952109464082,
+        "type": "text",
+        "color": "#fd0808",
+        "isCustom": true,
+        "customValue": "Larreth Jimu is also a director at SascomX"
+      }
+    ],
+    "Siphiwe-director": [
+      {
+        "page": 1,
+        "xRatio": 0.42890098322470827,
+        "yRatio": 0.8368807804383631,
+        "type": "text",
+        "color": "#ff0000",
+        "isCustom": true,
+        "customValue": "Siphiwe is also a Director"
+      }
+    ],
+    "cancel": [
+      {
+        "page": 1,
+        "xRatio": 0.726779995072678,
+        "yRatio": 0.739484353224376,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "directorName": [
+      {
+        "page": 1,
+        "xRatio": 0.2676431722994916,
+        "yRatio": 0.5953693145825414,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "directorPosition": [
+      {
+        "page": 1,
+        "xRatio": 0.4916123541400703,
+        "yRatio": 0.5937856328392246,
+        "type": "text",
+        "color": "#000000"
+      },
+      {
+        "page": 2,
+        "xRatio": 0.19821272592891218,
+        "yRatio": 0.44254402635246415,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "currentDate": [
+      {
+        "page": 2,
+        "xRatio": 0.5812000268763018,
+        "yRatio": 0.49243000126694536,
+        "type": "text",
+        "color": "#000000"
+      }
+    ],
+    "signature": [
+      {
+        "page": 2,
+        "xRatio": 0.18253488320007166,
+        "yRatio": 0.4995565691118712,
+        "type": "signature",
+        "widthRatio": 0.2116508768393469,
+        "heightRatio": 0.030881793994678833,
+        "color": "#000000"
+      }
+    ],
+    "legalName": [
+      {
+        "page": 2,
+        "xRatio": 0.5408855741449976,
+        "yRatio": 0.44412770809578106,
+        "type": "text",
+        "color": "#000000"
+      }
+    ]
+  }
+}

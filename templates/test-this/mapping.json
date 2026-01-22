@@ -1,0 +1,66 @@
+{
+  "templateId": "test-this",
+  "pageSize": "A4",
+  "fields": {
+    "dash": [
+      {
+        "page": 0,
+        "xRatio": 0.7715738314407937,
+        "yRatio": 0.5866590649942987,
+        "type": "text"
+      }
+    ],
+    "cancel": [
+      {
+        "page": 1,
+        "xRatio": 0.7794127528052139,
+        "yRatio": 0.8994362092993792,
+        "type": "text"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.7312593787094895,
+        "yRatio": 0.7363169897377423,
+        "type": "text"
+      }
+    ],
+    "directorName": [
+      {
+        "page": 1,
+        "xRatio": 0.27100271002710025,
+        "yRatio": 0.5945774737108831,
+        "type": "text"
+      }
+    ],
+    "directorPosition": [
+      {
+        "page": 1,
+        "xRatio": 0.4994512755044906,
+        "yRatio": 0.5945774737108831,
+        "type": "text"
+      },
+      {
+        "page": 2,
+        "xRatio": 0.1959730341105064,
+        "yRatio": 0.44650323071075626,
+        "type": "text"
+      }
+    ],
+    "currentDate": [
+      {
+        "page": 2,
+        "xRatio": 0.5823198727855047,
+        "yRatio": 0.49243000126694536,
+        "type": "text"
+      }
+    ],
+    "companyName": [
+      {
+        "page": 2,
+        "xRatio": 0.5386458823265918,
+        "yRatio": 0.44571138983909786,
+        "type": "text"
+      }
+    ]
+  }
+}

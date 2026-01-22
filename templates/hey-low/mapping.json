@@ -1,0 +1,66 @@
+{
+  "templateId": "hey-low",
+  "pageSize": "A4",
+  "fields": {
+    "directorName": [
+      {
+        "page": 1,
+        "xRatio": 0.27660193957311474,
+        "yRatio": 0.5953693145825414,
+        "type": "text"
+      }
+    ],
+    "directorPosition": [
+      {
+        "page": 1,
+        "xRatio": 0.49609173777688187,
+        "yRatio": 0.5953693145825414,
+        "type": "text"
+      },
+      {
+        "page": 2,
+        "xRatio": 0.20381195547492664,
+        "yRatio": 0.44491954896743946,
+        "type": "text"
+      }
+    ],
+    "dash": [
+      {
+        "page": 1,
+        "xRatio": 0.7771730609868082,
+        "yRatio": 0.9010198910426961,
+        "type": "text"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.737978454164707,
+        "yRatio": 0.7363169897377423,
+        "type": "text"
+      }
+    ],
+    "currentDate": [
+      {
+        "page": 2,
+        "xRatio": 0.5856794105131133,
+        "yRatio": 0.49401368301026216,
+        "type": "text"
+      }
+    ],
+    "bidderName": [
+      {
+        "page": 2,
+        "xRatio": 0.5532038791462295,
+        "yRatio": 0.44412770809578106,
+        "type": "text"
+      }
+    ],
+    "signature": [
+      {
+        "page": 2,
+        "xRatio": 0.19821272592891218,
+        "yRatio": 0.5146015456733815,
+        "type": "signature"
+      }
+    ]
+  }
+}

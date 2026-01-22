@@ -1,0 +1,15 @@
+{
+  "templateId": "test-1",
+  "pageSize": "A4",
+  "fields": {
+    "Hello there": [
+      {
+        "page": 0,
+        "xRatio": 0.3908262223118099,
+        "yRatio": 0.41641327758773594,
+        "type": "text",
+        "color": "#000000"
+      }
+    ]
+  }
+}

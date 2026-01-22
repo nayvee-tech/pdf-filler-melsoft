@@ -1,0 +1,90 @@
+{
+  "templateId": "SBD4-Template",
+  "pageSize": "A4",
+  "fields": {
+    "dash": [
+      {
+        "page": 0,
+        "xRatio": 0.7659746018947793,
+        "yRatio": 0.589034587609274,
+        "type": "text"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.7245403032542722,
+        "yRatio": 0.7386925123527176,
+        "type": "text"
+      },
+      {
+        "page": 1,
+        "xRatio": 0.7715738314407937,
+        "yRatio": 0.9026035727860129,
+        "type": "text"
+      }
+    ],
+    "Larreth Jimu is also a director at Melsoft Academy": [
+      {
+        "page": 1,
+        "xRatio": 0.39642545185782435,
+        "yRatio": 0.7006841505131128,
+        "type": "text"
+      }
+    ],
+    "Siphiwe Mabana is also a director at SascomX": [
+      {
+        "page": 1,
+        "xRatio": 0.4009048354946359,
+        "yRatio": 0.6721778791334093,
+        "type": "text"
+      }
+    ],
+    "directorName": [
+      {
+        "page": 1,
+        "xRatio": 0.24860579184304238,
+        "yRatio": 0.5937856328392246,
+        "type": "text"
+      }
+    ],
+    "directorPosition": [
+      {
+        "page": 1,
+        "xRatio": 0.5039306591413022,
+        "yRatio": 0.5914101102242493,
+        "type": "text"
+      },
+      {
+        "page": 2,
+        "xRatio": 0.19933257183811506,
+        "yRatio": 0.44412770809578106,
+        "type": "text"
+      }
+    ],
+    "signature": [
+      {
+        "page": 2,
+        "xRatio": 0.18813411274608613,
+        "yRatio": 0.5058912960851387,
+        "type": "signature",
+        "widthRatio": 0.210531030930144,
+        "heightRatio": 0.026922589636386673
+      }
+    ],
+    "currentDate": [
+      {
+        "page": 2,
+        "xRatio": 0.5912786400591279,
+        "yRatio": 0.49401368301026216,
+        "type": "text"
+      }
+    ],
+    "legalName": [
+      {
+        "page": 2,
+        "xRatio": 0.5543237250554324,
+        "yRatio": 0.44412770809578106,
+        "type": "text"
+      }
+    ]
+  }
+}

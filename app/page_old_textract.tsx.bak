@@ -1,0 +1,349 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useDropzone } from 'react-dropzone';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Upload, FileText, Loader2, AlertCircle } from 'lucide-react';
+import confetti from 'canvas-confetti';
+import Navigation from '@/components/Navigation';
+import PDFPreviewModal from '@/components/PDFPreviewModal';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+
+export default function Home() {
+  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<{
+    documentId: string;
+    sourceUrl: string;
+    filename: string;
+    mappedFields: Array<{
+      id: string;
+      page: number;
+      keyText: string;
+      confidence: number;
+      boundingBox: { Left: number; Top: number; Width: number; Height: number };
+    }>;
+    warnings?: {
+      lowConfidenceCount: number;
+      lowConfidenceKeys: Array<{ keyText: string; confidence: number; page: number }>;
+    };
+  } | null>(null);
+  const [nudges, setNudges] = useState<Record<string, { dxRatio: number; dyRatio: number }>>({});
+  const router = useRouter();
+
+  const onDrop = async (acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      setError('Please upload a PDF file');
+      return;
+    }
+
+    setError('');
+    setUploading(true);
+    setProcessing(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      setProcessing(true);
+
+      const response = await fetch('/api/analyze-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setAnalysis({
+          documentId: data.documentId,
+          sourceUrl: data.sourceUrl,
+          filename: data.filename,
+          mappedFields: data.mappedFields || [],
+          warnings: data.warnings,
+        });
+        setNudges({});
+        setShowPreview(true);
+
+        if (data.warnings?.lowConfidenceCount > 0) {
+          setToast('⚠️ Some fields were not auto-detected. Please check the preview.');
+          setTimeout(() => setToast(null), 4500);
+        }
+
+        setUploading(false);
+        setProcessing(false);
+      } else {
+        setError(data.error || '⚠️ AWS Connection Error: Failed to analyze document layout.');
+        setUploading(false);
+        setProcessing(false);
+      }
+    } catch (err) {
+      setError('⚠️ AWS Connection Error: Failed to analyze document layout.');
+      setUploading(false);
+      setProcessing(false);
+    }
+  };
+
+  const handleConfirmDownload = () => {
+    if (!analysis) return;
+
+    (async () => {
+      try {
+        setUploading(true);
+        setProcessing(true);
+        setError('');
+
+        const response = await fetch('/api/sign-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            documentId: analysis.documentId,
+            nudges,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          setError(data.error || '⚠️ AWS Connection Error: Failed to analyze document layout.');
+          setUploading(false);
+          setProcessing(false);
+          return;
+        }
+
+        const link = document.createElement('a');
+        link.href = data.downloadUrl;
+        link.download = data.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setShowPreview(false);
+
+        setTimeout(() => {
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#D4AF37', '#059669', '#0F172A'],
+            ticks: 200,
+          });
+        }, 100);
+
+        setTimeout(() => {
+          setAnalysis(null);
+          setNudges({});
+          setUploading(false);
+          setProcessing(false);
+          router.refresh();
+        }, 2000);
+      } catch {
+        setError('⚠️ AWS Connection Error: Failed to analyze document layout.');
+        setUploading(false);
+        setProcessing(false);
+      }
+    })();
+  };
+
+  const handleRetry = () => {
+    setShowPreview(false);
+    setAnalysis(null);
+    setNudges({});
+    setError('');
+  };
+
+  const handleNudge = (fieldId: string, delta: { dxRatio: number; dyRatio: number }) => {
+    setNudges((prev) => {
+      const current = prev[fieldId] || { dxRatio: 0, dyRatio: 0 };
+      return {
+        ...prev,
+        [fieldId]: {
+          dxRatio: current.dxRatio + delta.dxRatio,
+          dyRatio: current.dyRatio + delta.dyRatio,
+        },
+      };
+    });
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    multiple: false,
+    disabled: uploading,
+  });
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC]">
+      <Navigation />
+      {toast && (
+        <div className="fixed top-4 right-4 z-50">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-[#0F172A] text-white border border-[#D4AF37]/40 px-4 py-3 rounded-lg shadow-lg max-w-sm"
+          >
+            <div className="text-sm">{toast}</div>
+          </motion.div>
+        </div>
+      )}
+      <main className="max-w-5xl mx-auto px-4 py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center mb-12"
+        >
+          <h1 className="text-4xl font-bold text-[#0F172A] mb-4">
+            Upload SBD/RFQ Document
+          </h1>
+          <p className="text-lg text-[#0F172A]/60">
+            Drop your PDF file below to automatically fill it with company information
+          </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Card className="overflow-hidden">
+            <div
+              {...getRootProps()}
+              className={`
+                relative p-12 border-2 border-dashed rounded-lg transition-all cursor-pointer
+                ${isDragActive 
+                  ? 'border-[#059669] bg-[#059669]/5' 
+                  : 'border-[#0F172A]/20 hover:border-[#D4AF37] hover:bg-[#D4AF37]/5'
+                }
+                ${uploading ? 'pointer-events-none opacity-75' : ''}
+              `}
+            >
+              <input {...getInputProps()} />
+              
+              <AnimatePresence mode="wait">
+                {!uploading && (
+                  <motion.div
+                    key="upload"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="text-center"
+                  >
+                    <motion.div
+                      animate={isDragActive ? { scale: [1, 1.1, 1] } : {}}
+                      transition={{ repeat: isDragActive ? Infinity : 0, duration: 1 }}
+                      className="inline-block"
+                    >
+                      <div className="w-24 h-24 mx-auto mb-6 bg-[#0F172A] rounded-full flex items-center justify-center">
+                        <Upload className="w-12 h-12 text-[#D4AF37]" />
+                      </div>
+                    </motion.div>
+                    <h3 className="text-2xl font-semibold text-[#0F172A] mb-2">
+                      {isDragActive ? 'Drop your PDF here' : 'Drag & Drop PDF'}
+                    </h3>
+                    <p className="text-[#0F172A]/60 mb-6">
+                      or click to browse your files
+                    </p>
+                    <Button
+                      size="lg"
+                      className="bg-[#D4AF37] hover:bg-[#C19B2F] text-[#0F172A] font-semibold"
+                    >
+                      <FileText className="w-5 h-5 mr-2" />
+                      Analyze & Sign Document
+                    </Button>
+                  </motion.div>
+                )}
+
+                {uploading && (
+                  <motion.div
+                    key="processing"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="text-center"
+                  >
+                    <div className="absolute inset-0 overflow-hidden rounded-lg pointer-events-none">
+                      <motion.div
+                        className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent opacity-80"
+                        initial={{ top: 0 }}
+                        animate={{ top: ['0%', '100%'] }}
+                        transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
+                      />
+                    </div>
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                      className="inline-block mb-6"
+                    >
+                      <Loader2 className="w-16 h-16 text-[#059669]" />
+                    </motion.div>
+                    <h3 className="text-2xl font-semibold text-[#0F172A] mb-2">
+                      {processing ? 'Scanning with AWS Textract...' : 'Reading Document...'}
+                    </h3>
+                    <p className="text-[#0F172A]/60">
+                      Detecting form fields and signature areas
+                    </p>
+                    <motion.div
+                      className="mt-6 max-w-md mx-auto h-2 bg-[#0F172A]/10 rounded-full overflow-hidden"
+                    >
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-[#059669] to-[#D4AF37]"
+                        initial={{ width: '0%' }}
+                        animate={{ width: '100%' }}
+                        transition={{ duration: 3, ease: 'easeInOut' }}
+                      />
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-5 bg-red-600 border-t border-red-700"
+              >
+                <div className="flex items-center justify-center gap-3">
+                  <AlertCircle className="w-6 h-6 text-white" />
+                  <p className="text-white text-center font-semibold">{error}</p>
+                </div>
+              </motion.div>
+            )}
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 text-center text-sm text-[#0F172A]/50"
+        >
+          <p>Supported format: PDF • Maximum file size: 10MB</p>
+        </motion.div>
+      </main>
+
+      {analysis && (
+        <PDFPreviewModal
+          isOpen={showPreview}
+          pdfUrl={analysis.sourceUrl}
+          filename={analysis.filename}
+          highlights={analysis.mappedFields}
+          nudges={nudges}
+          onNudge={handleNudge}
+          onConfirm={handleConfirmDownload}
+          onRetry={handleRetry}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
+    </div>
+  );
+}

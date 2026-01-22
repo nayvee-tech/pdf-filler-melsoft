@@ -1,0 +1,390 @@
+================================================================================
+MELSOFT PDF FILLER - TECHNICAL DOCUMENTATION
+================================================================================
+
+PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+A single-tenant Next.js 16 application that automates filling South African 
+government tender forms (SBD/RFQ documents) using AWS Textract for intelligent 
+form field detection and automatic company data population.
+
+CORE TECHNOLOGY STACK
+--------------------------------------------------------------------------------
+- Framework: Next.js 16.1.2 (App Router, React Server Components)
+- Runtime: Node.js (server-side processing)
+- Language: TypeScript
+- Styling: Tailwind CSS 4 + Shadcn UI components
+- Animations: Framer Motion
+- PDF Manipulation: pdf-lib (stamping text/images)
+- PDF Rendering: react-pdf + pdfjs-dist (client-side preview)
+- Document Analysis: AWS Textract (@aws-sdk/client-textract)
+- Authentication: Cookie-based sessions (simple password auth)
+- Scheduling: node-cron (auto-cleanup of temp files)
+
+ARCHITECTURE PATTERN
+--------------------------------------------------------------------------------
+Two-step processing pipeline:
+
+1. ANALYZE PHASE (POST /api/analyze-pdf)
+   - Upload PDF → Store as source.pdf
+   - Send to AWS Textract AnalyzeDocument API
+   - Parse returned Blocks (KEY_VALUE_SET + SIGNATURE)
+   - Map detected keys to company profile fields
+   - Return bounding boxes + confidence scores
+   - Save analysis.json for step 2
+
+2. SIGN PHASE (POST /api/sign-pdf)
+   - Load source.pdf + analysis.json
+   - Apply user nudge offsets (if any)
+   - Stamp company data into detected VALUE bounding boxes
+   - Overlay signature image into detected SIGNATURE box
+   - Save as SIGNED_<timestamp>.pdf
+   - Return download URL
+
+WHY TWO STEPS?
+- Allows user to preview detected fields with highlights
+- Enables manual correction via "nudge" controls (5px adjustments)
+- Prevents wasted Textract API calls on bad scans
+- Better UX: user confirms before final signing
+
+AWS TEXTRACT INTEGRATION
+--------------------------------------------------------------------------------
+
+API Used: AnalyzeDocument (synchronous)
+Feature Types: ["FORMS", "SIGNATURES"]
+
+Input: PDF as Uint8Array (max 10MB for sync API)
+Output: Array of Block objects
+
+Block Types We Care About:
+1. KEY_VALUE_SET (EntityTypes: ["KEY"])
+   - Represents a form field label
+   - Has CHILD relationship → WORD blocks (the label text)
+   - Has VALUE relationship → another KEY_VALUE_SET block (the input box)
+   - We extract: keyText, VALUE block's BoundingBox, confidence
+
+2. KEY_VALUE_SET (EntityTypes: ["VALUE"])
+   - Represents the actual input box where text goes
+   - Has Geometry.BoundingBox (Left, Top, Width, Height as 0-1 ratios)
+   - This is what we stamp text into
+
+3. SIGNATURE
+   - Represents detected signature area
+   - Has Geometry.BoundingBox
+   - We overlay the base64 signature image here
+
+Bounding Box Coordinate System:
+- All coordinates are RATIOS (0.0 to 1.0) relative to page dimensions
+- Left: distance from left edge / page width
+- Top: distance from top edge / page height
+- Width: box width / page width
+- Height: box height / page height
+
+To convert to PDF points (pdf-lib uses bottom-left origin):
+  x_pdf = Left * pageWidth
+  y_pdf = pageHeight - (Top * pageHeight) - (Height * pageHeight)
+
+KEY MAPPING LOGIC (lib/textract.ts)
+--------------------------------------------------------------------------------
+Function: mapDetectedKeyToProfileValue(keyText, companyProfile)
+
+Normalizes detected key text (lowercase, remove special chars) and matches 
+against known patterns:
+
+- "name of bidder" / "bidder" / "name" → company.name
+- "postal address" → street + city + postal code
+- "street address" / "physical address" → street + city
+- "cell" / "mobile" / "contact number" → company.contact.phone
+- "vat" / "vat reg" / "vat number" → company.vatNumber
+- "csd" / "maaa" / "supplier number" → company.registrationNumber
+- "email" → company.contact.email
+
+Returns: { fieldKey: string, value: string } or null if no match
+
+CONFIDENCE THRESHOLD
+--------------------------------------------------------------------------------
+If any mapped field has confidence < 80%:
+- Flag it in warnings.lowConfidenceKeys
+- Show toast: "⚠️ Some fields were not auto-detected. Please check the preview."
+- Highlight field in red in the preview sidebar
+
+NUDGE SYSTEM (COORDINATE ADJUSTMENT)
+--------------------------------------------------------------------------------
+Problem: Textract bounding boxes may be slightly off due to scan quality
+
+Solution: User can select a field and nudge it 5px in any direction
+
+Implementation:
+- Frontend stores nudges as { fieldId: { dxRatio, dyRatio } }
+- dxRatio = pixels / canvasWidth (converts px to ratio)
+- dyRatio = pixels / canvasHeight
+- Preview overlay applies nudge visually
+- Backend applies nudge when stamping:
+    x_final = x_base + (dxRatio * pageWidth)
+    y_final = y_base - (dyRatio * pageHeight)  // Note: minus for Y
+
+Why ratios? PDF pages can have different dimensions; ratios scale correctly.
+
+TEXT STAMPING LOGIC (lib/sign-pdf route)
+--------------------------------------------------------------------------------
+For each mapped field:
+1. Get VALUE bounding box from Textract
+2. Convert ratios to PDF points
+3. Apply nudge offset
+4. Use Helvetica font, size 10
+5. Check if text fits in maxWidth (box width - 4px padding)
+6. If too wide:
+   - Try size 8
+   - If still too wide: truncate and add "..."
+7. Draw text at (x, y) using pdf-lib's drawText()
+
+SIGNATURE OVERLAY
+--------------------------------------------------------------------------------
+1. Find all SIGNATURE blocks from Textract
+2. Sort by confidence (highest first)
+3. Take the best one
+4. Convert bounding box to PDF points
+5. Embed base64 PNG signature from company_profile.json
+6. Draw image to fill the entire signature box
+
+FILE STRUCTURE
+--------------------------------------------------------------------------------
+app/
+├── page.tsx                    # Main upload UI with drag-and-drop
+├── profile/page.tsx            # View company profile
+├── vault/page.tsx              # List stored documents
+├── login/page.tsx              # Password authentication
+└── api/
+    ├── analyze-pdf/route.ts    # Step 1: Textract analysis
+    ├── sign-pdf/route.ts       # Step 2: Stamp & sign
+    ├── process-pdf/route.ts    # LEGACY (not used by UI anymore)
+    ├── auth/                   # Login/logout endpoints
+    └── vault/                  # Document CRUD
+
+components/
+├── Navigation.tsx              # Top nav bar
+├── PDFPreviewModal.tsx         # Preview with highlights + nudge controls
+└── ui/                         # Shadcn components (Button, Card, Input)
+
+lib/
+├── textract.ts                 # AWS Textract client + block parsing
+├── pdf-processor.ts            # LEGACY fixed-mapping processor
+├── mapping_logic.ts            # LEGACY fixed coordinates (SBD1, SABS)
+├── auth.ts                     # Cookie-based auth helpers
+├── cleanup-cron.ts             # Auto-delete expired docs
+└── utils.ts                    # Tailwind class merge utility
+
+src/data/
+└── company_profile.json        # Company info + base64 signature
+
+public/temp-docs/
+└── <documentId>/
+    ├── source.pdf              # Original uploaded PDF
+    ├── analysis.json           # Textract results + mappings
+    ├── SIGNED_<timestamp>.pdf  # Final signed PDF
+    └── metadata.json           # Expiry timestamp
+
+UI FLOW (USER JOURNEY)
+--------------------------------------------------------------------------------
+1. User lands on home page (/)
+2. Drag & drop PDF or click "Analyze & Sign Document" button (gold)
+3. Frontend uploads to POST /api/analyze-pdf
+4. Server shows "Scanning with AWS Textract..." with laser animation
+5. Textract analyzes → returns detected fields
+6. Preview modal opens showing:
+   - PDF with yellow highlight boxes over detected fields
+   - Sidebar listing all fields with confidence %
+   - Nudge controls (arrow buttons) to adjust selected field
+7. User reviews, optionally nudges misaligned fields
+8. User clicks "Confirm & Download" (gold button)
+9. Frontend calls POST /api/sign-pdf with nudge offsets
+10. Server stamps text + signature → returns download URL
+11. Browser auto-downloads SIGNED_<timestamp>.pdf
+12. Success confetti animation plays
+13. Document stored in vault for 3 hours
+
+ERROR HANDLING
+--------------------------------------------------------------------------------
+AWS Connection Errors:
+- Missing env vars (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
+- IAM permission denied (needs textract:AnalyzeDocument)
+- Network timeout
+→ Shows: "⚠️ AWS Connection Error: Failed to analyze document layout."
+
+Low Confidence Warning:
+- Any field with confidence < 80%
+→ Shows toast: "⚠️ Some fields were not auto-detected. Please check the preview."
+→ Field highlighted in red in sidebar
+
+No Fields Detected:
+- Textract returns empty Blocks array
+→ Preview shows "No fields detected."
+
+ENVIRONMENT VARIABLES (.env.local)
+--------------------------------------------------------------------------------
+Required:
+APP_PASSWORD=<your_password>           # Simple auth password
+AWS_ACCESS_KEY_ID=<aws_key>            # IAM user access key
+AWS_SECRET_ACCESS_KEY=<aws_secret>     # IAM user secret
+AWS_REGION=af-south-1                  # AWS region (Cape Town)
+
+IAM Permissions Needed:
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "textract:AnalyzeDocument",
+      "Resource": "*"
+    }
+  ]
+}
+
+AUTHENTICATION
+--------------------------------------------------------------------------------
+Simple cookie-based auth (NOT production-grade):
+- User enters APP_PASSWORD on /login
+- Server sets httpOnly cookie with hashed password
+- Middleware checks cookie on protected routes
+- No JWT, no OAuth, no user database
+
+For production: Replace with NextAuth.js or similar
+
+DOCUMENT CLEANUP
+--------------------------------------------------------------------------------
+Cron job runs every hour (lib/cleanup-cron.ts):
+1. Scans public/temp-docs/
+2. Reads metadata.json in each folder
+3. If expiresAt < now: delete entire folder
+4. Prevents disk from filling up
+
+Expiry: 3 hours from document creation
+
+KNOWN LIMITATIONS
+--------------------------------------------------------------------------------
+1. AWS Textract AnalyzeDocument (sync) has limits:
+   - Max 10MB file size
+   - May only process first page on large PDFs
+   - For multi-page: need async flow (StartDocumentAnalysis + S3)
+
+2. Single-tenant only:
+   - One company profile for entire app
+   - No multi-user support
+   - No document ownership/permissions
+
+3. Simple auth:
+   - Single password for all users
+   - No role-based access control
+   - Not suitable for production without upgrade
+
+4. No database:
+   - All data in JSON files
+   - No audit trail
+   - No search/filtering in vault
+
+TESTING RECOMMENDATIONS
+--------------------------------------------------------------------------------
+1. Test with actual SBD forms from South African government tenders
+2. Check Textract detection quality on scanned vs digital PDFs
+3. Verify signature placement on different form layouts
+4. Test nudge system with misaligned fields
+5. Monitor AWS Textract costs (charged per page analyzed)
+
+COST CONSIDERATIONS
+--------------------------------------------------------------------------------
+AWS Textract Pricing (af-south-1 region):
+- AnalyzeDocument (FORMS): ~$0.05 per page
+- AnalyzeDocument (SIGNATURES): ~$0.05 per page
+- Total: ~$0.10 per page analyzed
+
+For 100 documents/month (avg 5 pages each):
+- 500 pages × $0.10 = $50/month
+
+Optimization: Cache analysis results, avoid re-analyzing same document
+
+DEPLOYMENT NOTES
+--------------------------------------------------------------------------------
+1. Run `npm install` to install dependencies
+2. Create `.env.local` with AWS credentials
+3. Edit `src/data/company_profile.json` with company info
+4. Convert signature to base64 PNG and add to profile
+5. Run `npm run dev` for development
+6. Run `npm run build && npm start` for production
+
+Production Checklist:
+- [ ] Set strong APP_PASSWORD
+- [ ] Use IAM role instead of access keys (if on AWS)
+- [ ] Enable HTTPS
+- [ ] Set up monitoring/logging
+- [ ] Configure backup for company_profile.json
+- [ ] Review AWS Textract quotas/limits
+- [ ] Add rate limiting to API routes
+- [ ] Implement proper error tracking (Sentry, etc.)
+
+FUTURE ENHANCEMENTS (SUGGESTIONS)
+--------------------------------------------------------------------------------
+1. Multi-page Textract Support:
+   - Use StartDocumentAnalysis + GetDocumentAnalysis
+   - Store PDFs in S3 bucket
+   - Poll for job completion
+
+2. Database Integration:
+   - PostgreSQL or MongoDB for documents
+   - Store analysis results, audit logs
+   - Enable search/filtering
+
+3. Multi-tenant Support:
+   - User accounts with NextAuth.js
+   - Multiple company profiles per account
+   - Document ownership/sharing
+
+4. Advanced Field Mapping:
+   - Machine learning to improve key matching
+   - Custom field mapping rules per form type
+   - Checkbox detection and auto-fill
+
+5. Batch Processing:
+   - Upload multiple PDFs at once
+   - Queue system for large batches
+   - Progress tracking
+
+6. Export Options:
+   - Bulk download as ZIP
+   - Email signed documents
+   - Integration with document management systems
+
+7. Analytics Dashboard:
+   - Track documents processed
+   - Monitor Textract accuracy
+   - Cost tracking per document
+
+TROUBLESHOOTING
+--------------------------------------------------------------------------------
+Issue: "AWS Connection Error"
+Fix: Check .env.local has correct AWS credentials and region
+
+Issue: "No fields detected"
+Fix: PDF may be scanned image without OCR. Run through OCR first.
+
+Issue: Fields detected but wrong values
+Fix: Check mapDetectedKeyToProfileValue() patterns in lib/textract.ts
+
+Issue: Signature not appearing
+Fix: Verify signature.base64 in company_profile.json is valid PNG
+
+Issue: Text overflowing boxes
+Fix: Adjust maxWidth calculation or font size in sign-pdf route
+
+Issue: Nudge not working
+Fix: Check Y-axis inversion (CSS top-down vs PDF bottom-up)
+
+CONTACT & SUPPORT
+--------------------------------------------------------------------------------
+For questions or contributions, refer to the main developer or check:
+- README.md for setup instructions
+- ENV_SETUP.md for environment configuration
+- COORDINATE_MAPPING_GUIDE.md for legacy fixed-mapping docs
+
+================================================================================
+END OF TECHNICAL DOCUMENTATION
+================================================================================

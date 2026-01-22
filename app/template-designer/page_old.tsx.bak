@@ -1,0 +1,986 @@
+'use client';
+
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import Navigation from '@/components/Navigation';
+
+// Dynamically import react-pdf to avoid server-side execution
+const Document = dynamic(
+  () => import('react-pdf').then((mod) => {
+    // Use local worker file from public directory
+    if (typeof window !== 'undefined') {
+      mod.pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
+    }
+    return mod.Document;
+  }),
+  { ssr: false }
+);
+
+const Page = dynamic(
+  () => import('react-pdf').then((mod) => mod.Page),
+  { ssr: false }
+);
+
+type FieldType = 'text' | 'signature' | 'checkbox' | 'date' | 'select' | 'radio';
+
+interface FieldCoordinate {
+  page: number;
+  xRatio: number;
+  yRatio: number;
+  maxWidthRatio?: number;
+  widthRatio?: number;
+  heightRatio?: number;
+  type: FieldType;
+  options?: string[];
+  value?: string;
+  checked?: boolean;
+  required?: boolean;
+}
+
+interface TemplateMapping {
+  templateId: string;
+  pageSize: string;
+  fields: Record<string, FieldCoordinate[]>;
+}
+
+interface ClickPoint {
+  x: number;
+  y: number;
+  page: number;
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+export default function TemplateDesigner() {
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [templateId, setTemplateId] = useState('');
+  const [templateMapping, setTemplateMapping] = useState<TemplateMapping>({
+    templateId: '',
+    pageSize: 'A4',
+    fields: {}
+  });
+  const [showFieldModal, setShowFieldModal] = useState(false);
+  const [currentClick, setCurrentClick] = useState<ClickPoint | null>(null);
+  const [selectedFieldName, setSelectedFieldName] = useState('');
+  const [customFieldName, setCustomFieldName] = useState('');
+  const [fieldType, setFieldType] = useState<FieldType>('text');
+  const [fieldOptions, setFieldOptions] = useState<string>('');
+  const [maxWidthRatio, setMaxWidthRatio] = useState<string>('');
+  const [widthRatio, setWidthRatio] = useState<string>('');
+  const [heightRatio, setHeightRatio] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Memoize PDF options to prevent unnecessary reloads
+  const pdfOptions = useMemo(() => ({
+    cMapUrl: undefined,
+    standardFontDataUrl: undefined,
+  }), []);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/auth/check');
+      if (response.ok) {
+        setIsAuthenticated(true);
+      } else {
+        router.push('/login?redirect=/template-designer');
+      }
+    } catch (error) {
+      router.push('/login?redirect=/template-designer');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type === 'application/pdf') {
+      setPdfFile(file);
+      const url = URL.createObjectURL(file);
+      setPdfUrl(url);
+      setLoading(true);
+      setError(null);
+    }
+  };
+
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setLoading(false);
+    setError(null);
+  };
+
+  const onDocumentLoadError = (error: Error) => {
+    console.error('PDF load error:', error);
+    setLoading(false);
+    setError('Failed to load PDF. Please try another file.');
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>, pageNumber: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const canvas = e.currentTarget.querySelector('canvas');
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const canvasWidth = rect.width;
+    const canvasHeight = rect.height;
+
+    setCurrentClick({
+      x: clickX,
+      y: clickY,
+      page: pageNumber - 1,
+      canvasWidth,
+      canvasHeight
+    });
+    setShowFieldModal(true);
+  };
+
+  const handleFieldAssignment = () => {
+    if (!currentClick) return;
+
+    const fieldName = selectedFieldName === 'custom' ? customFieldName : selectedFieldName;
+    if (!fieldName) {
+      alert('Please select or enter a field name');
+      return;
+    }
+
+    const xRatio = currentClick.x / currentClick.canvasWidth;
+    const yRatio = 1 - (currentClick.y / currentClick.canvasHeight);
+
+    const newCoordinate: FieldCoordinate = {
+      page: currentClick.page,
+      xRatio,
+      yRatio,
+      type: fieldType,
+      required: true
+    };
+
+    // Set default values based on field type
+    switch (fieldType) {
+      case 'checkbox':
+        newCoordinate.checked = false;
+        newCoordinate.widthRatio = 0.02; // Default checkbox size
+        newCoordinate.heightRatio = 0.02;
+        break;
+      case 'date':
+        newCoordinate.value = new Date().toISOString().split('T')[0]; // Default to today
+        newCoordinate.maxWidthRatio = 0.2;
+        break;
+      case 'select':
+      case 'radio':
+        newCoordinate.options = fieldOptions.split(',').map(opt => opt.trim()).filter(Boolean);
+        if (newCoordinate.options.length > 0) {
+          newCoordinate.value = newCoordinate.options[0];
+        }
+        newCoordinate.maxWidthRatio = 0.3;
+        break;
+      case 'signature':
+        if (widthRatio && parseFloat(widthRatio) > 0) {
+          newCoordinate.widthRatio = parseFloat(widthRatio);
+        } else {
+          newCoordinate.widthRatio = 0.25; // Default signature size
+        }
+        if (heightRatio && parseFloat(heightRatio) > 0) {
+          newCoordinate.heightRatio = parseFloat(heightRatio);
+        } else {
+          newCoordinate.heightRatio = 0.1;
+        }
+        break;
+      default: // text
+        if (maxWidthRatio && parseFloat(maxWidthRatio) > 0) {
+          newCoordinate.maxWidthRatio = parseFloat(maxWidthRatio);
+        }
+        break;
+    }
+
+    setTemplateMapping(prev => ({
+      ...prev,
+      fields: {
+        ...prev.fields,
+        [fieldName]: [...(prev.fields[fieldName] || []), newCoordinate]
+      }
+    }));
+
+    setShowFieldModal(false);
+    setSelectedFieldName('');
+    setCustomFieldName('');
+    setMaxWidthRatio('');
+    setWidthRatio('');
+    setHeightRatio('');
+    setCurrentClick(null);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!templateId) {
+      alert('Please enter a template ID');
+      return;
+    }
+
+    if (!pdfFile) {
+      alert('Please upload a PDF template');
+      return;
+    }
+
+    if (Object.keys(templateMapping.fields).length === 0) {
+      alert('Please map at least one field');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('templateId', templateId);
+      formData.append('mapping', JSON.stringify({
+        ...templateMapping,
+        templateId
+      }));
+      formData.append('pdf', pdfFile);
+
+      const response = await fetch('/api/templates/save', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save template');
+      }
+
+      alert('Template saved successfully!');
+      
+      setPdfFile(null);
+      setPdfUrl(null);
+      setTemplateId('');
+      setTemplateMapping({
+        templateId: '',
+        pageSize: 'A4',
+        fields: {}
+      });
+    } catch (error) {
+      console.error('Error saving template:', error);
+      alert('Failed to save template');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const removeField = (fieldName: string) => {
+    setTemplateMapping(prev => {
+      const newFields = { ...prev.fields };
+      delete newFields[fieldName];
+      return {
+        ...prev,
+        fields: newFields
+      };
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+        <div className="text-[#D4AF37] text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      <Navigation />
+      
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-4xl font-bold text-[#D4AF37] mb-2">Template Designer</h1>
+          <p className="text-gray-400 mb-8">Create fixed-coordinate mappings for PDF templates</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <Card className="bg-slate-800/50 border-slate-700 p-6">
+                <h2 className="text-xl font-semibold text-[#D4AF37] mb-4">PDF Template</h2>
+                
+                {!pdfUrl ? (
+                  <div className="border-2 border-dashed border-slate-600 rounded-lg p-12 text-center">
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      id="pdf-upload"
+                    />
+                    <label
+                      htmlFor="pdf-upload"
+                      className="cursor-pointer text-gray-400 hover:text-[#D4AF37] transition-colors"
+                    >
+                      <div className="text-6xl mb-4">📄</div>
+                      <div className="text-lg">Click to upload PDF template</div>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-gray-400">
+                        Page {currentPage} of {numPages}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          variant="outline"
+                          size="sm"
+                          className="border-slate-600"
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
+                          disabled={currentPage === numPages}
+                          variant="outline"
+                          size="sm"
+                          className="border-slate-600"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-600 rounded-lg overflow-auto bg-white max-h-[800px]">
+                      {isClient && (
+                        <Document
+                          file={pdfUrl}
+                          onLoadSuccess={onDocumentLoadSuccess}
+                          onLoadError={onDocumentLoadError}
+                          loading={<div className="text-center py-20">Loading PDF...</div>}
+                          error={<div className="text-center py-20 text-red-600">Failed to load PDF</div>}
+                          options={pdfOptions}
+                          className="flex justify-center p-4"
+                        >
+                        <div
+                          onClick={(e) => handleCanvasClick(e, currentPage)}
+                          className="cursor-crosshair relative"
+                          ref={(el) => {
+                            if (el) pageRefs.current.set(currentPage, el);
+                          }}
+                        >
+                          <Page
+                            pageNumber={currentPage}
+                            width={undefined}
+                            scale={1.5}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                          />
+                          
+                          {/* Visual highlights for assigned coordinates */}
+                          {Object.entries(templateMapping.fields).map(([fieldName, coordinates]) =>
+                            coordinates.map((coord, coordIndex) => {
+                              if (coord.page !== currentPage - 1) return null;
+                              
+                              const canvas = pageRefs.current.get(currentPage)?.querySelector('canvas');
+                              if (!canvas) return null;
+                              
+                              const canvasWidth = canvas.width / window.devicePixelRatio;
+                              const canvasHeight = canvas.height / window.devicePixelRatio;
+                              
+                              const highlightX = coord.xRatio * canvasWidth;
+                              const highlightY = (1 - coord.yRatio) * canvasHeight;
+                              
+                              // Calculate dimensions based on type
+                              const width = coord.widthRatio 
+                                ? coord.widthRatio * canvasWidth 
+                                : (coord.maxWidthRatio ? coord.maxWidthRatio * canvasWidth : 100);
+                              
+                              const height = coord.heightRatio 
+                                ? coord.heightRatio * canvasHeight 
+                                : 20; // Default height for text fields
+
+                              // Render different field types
+                              const renderField = () => {
+                                switch (coord.type) {
+                                  case 'checkbox':
+                                    return (
+                                      <div 
+                                        className="w-4 h-4 border-2 border-yellow-500 bg-white/20 flex items-center justify-center"
+                                        style={{ width: `${width}px`, height: `${width}px` }}
+                                      >
+                                        {coord.checked && (
+                                          <div className="w-3/4 h-3/4 bg-yellow-500"></div>
+                                        )}
+                                      </div>
+                                    );
+                                  case 'date':
+                                    return (
+                                      <div 
+                                        className="bg-white/10 border border-yellow-500/50 p-1 text-xs text-yellow-100 whitespace-nowrap"
+                                        style={{ width: `${width}px` }}
+                                      >
+                                        {new Date(coord.value || '').toLocaleDateString()}
+                                      </div>
+                                    );
+                                  case 'select':
+                                    return (
+                                      <div 
+                                        className="bg-white/10 border border-yellow-500/50 p-1 text-xs text-yellow-100"
+                                        style={{ width: `${width}px` }}
+                                      >
+                                        <select 
+                                          className="w-full bg-transparent"
+                                          value={coord.value}
+                                          onChange={(e) => {
+                                            const newCoords = [...coordinates];
+                                            newCoords[coordIndex] = { ...coord, value: e.target.value };
+                                            setTemplateMapping(prev => ({
+                                              ...prev,
+                                              fields: {
+                                                ...prev.fields,
+                                                [fieldName]: newCoords
+                                              }
+                                            }));
+                                          }}
+                                        >
+                                          {coord.options?.map((opt, i) => (
+                                            <option key={i} value={opt} className="bg-slate-800">
+                                              {opt}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    );
+                                  case 'radio':
+                                    return (
+                                      <div className="flex flex-col gap-1">
+                                        {coord.options?.map((opt, i) => (
+                                          <label key={i} className="flex items-center gap-2 text-xs text-yellow-100">
+                                            <input 
+                                              type="radio" 
+                                              name={`${fieldName}-${coordIndex}`}
+                                              checked={coord.value === opt}
+                                              onChange={() => {
+                                                const newCoords = [...coordinates];
+                                                newCoords[coordIndex] = { ...coord, value: opt };
+                                                setTemplateMapping(prev => ({
+                                                  ...prev,
+                                                  fields: {
+                                                    ...prev.fields,
+                                                    [fieldName]: newCoords
+                                                  }
+                                                }));
+                                              }}
+                                              className="text-yellow-500"
+                                            />
+                                            {opt}
+                                          </label>
+                                        ))}
+                                      </div>
+                                    );
+                                  case 'signature':
+                                    return (
+                                      <div 
+                                        className="border-2 border-dashed border-yellow-500 bg-white/10 flex items-center justify-center"
+                                        style={{ 
+                                          width: `${width}px`, 
+                                          height: `${height}px`,
+                                          minWidth: '100px',
+                                          minHeight: '50px'
+                                        }}
+                                      >
+                                        <span className="text-xs text-yellow-100">Signature</span>
+                                      </div>
+                                    );
+                                  default: // text
+                                    // Get the display value for special symbol fields
+                                    const getDisplayValue = (fieldName: string) => {
+                                      switch (fieldName) {
+                                        case 'tick':
+                                        case 'checkmark':
+                                          return '✓';
+                                        case 'dash':
+                                        case 'cancel':
+                                          return '—';
+                                        case 'cross':
+                                          return '✗';
+                                        default:
+                                          return fieldName;
+                                      }
+                                    };
+                                    
+                                    return (
+                                      <div 
+                                        className="bg-white/10 border border-yellow-500/50 p-1 text-xs text-yellow-100 whitespace-nowrap overflow-hidden text-ellipsis"
+                                        style={{ 
+                                          maxWidth: coord.maxWidthRatio ? `${coord.maxWidthRatio * 100}%` : 'none',
+                                          width: 'auto',
+                                          minWidth: '50px'
+                                        }}
+                                      >
+                                        {getDisplayValue(fieldName)}
+                                      </div>
+                                    );
+                                }
+                              };
+
+                              return (
+                                <div
+                                  key={`${fieldName}-${coordIndex}`}
+                                  className="absolute pointer-events-auto group"
+                                  style={{
+                                    left: `${highlightX}px`,
+                                    top: `${highlightY}px`,
+                                    transform: 'translate(-50%, -50%)',
+                                    cursor: 'move',
+                                    zIndex: 10
+                                  }}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/plain', `${fieldName},${coordIndex}`);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const [draggedFieldName, draggedCoordIndex] = e.dataTransfer.getData('text/plain').split(',');
+                                    if (draggedFieldName === fieldName && parseInt(draggedCoordIndex) === coordIndex) {
+                                      return; // Same field, no change needed
+                                    }
+
+                                    // Update the position of the dragged field
+                                    const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                    const newXRatio = (e.clientX - rect.left + (rect.width / 2)) / canvasWidth;
+                                    const newYRatio = 1 - ((e.clientY - rect.top + (rect.height / 2)) / canvasHeight);
+
+                                    const newCoords = [...templateMapping.fields[draggedFieldName]];
+                                    newCoords[parseInt(draggedCoordIndex)] = {
+                                      ...newCoords[parseInt(draggedCoordIndex)],
+                                      xRatio: newXRatio,
+                                      yRatio: newYRatio
+                                    };
+
+                                    setTemplateMapping(prev => ({
+                                      ...prev,
+                                      fields: {
+                                        ...prev.fields,
+                                        [draggedFieldName]: newCoords
+                                      }
+                                    }));
+                                  }}
+                                >
+                                  <div className="relative">
+                                    {renderField()}
+                                    <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const newCoords = [...coordinates];
+                                          newCoords.splice(coordIndex, 1);
+                                          setTemplateMapping(prev => ({
+                                            ...prev,
+                                            fields: {
+                                              ...prev.fields,
+                                              [fieldName]: newCoords.length > 0 ? newCoords : undefined
+                                            }
+                                          }));
+                                        }}
+                                        className="bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                                        title="Remove this field"
+                                      >
+                                        ×
+                                      </button>
+                                      {coord.type === 'checkbox' && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const newCoords = [...coordinates];
+                                            newCoords[coordIndex] = { 
+                                              ...coord, 
+                                              checked: !coord.checked 
+                                            };
+                                            setTemplateMapping(prev => ({
+                                              ...prev,
+                                              fields: {
+                                                ...prev.fields,
+                                                [fieldName]: newCoords
+                                              }
+                                            }));
+                                          }}
+                                          className="bg-blue-500 hover:bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                                          title="Toggle checkbox"
+                                        >
+                                          {coord.checked ? '✓' : '□'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                        </Document>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-gray-400 bg-slate-900/50 p-3 rounded">
+                      💡 <strong>Tip:</strong> Click anywhere on the PDF to map a field. Coordinates are saved as ratios for accurate placement.
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <div className="space-y-6">
+              <Card className="bg-slate-800/50 border-slate-700 p-6">
+                <h2 className="text-xl font-semibold text-[#D4AF37] mb-4">Template Settings</h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Template ID
+                    </label>
+                    <Input
+                      type="text"
+                      value={templateId}
+                      onChange={(e) => setTemplateId(e.target.value)}
+                      placeholder="e.g. SBD4, DM755, Custom"
+                      className="bg-slate-900/50 border-slate-600 text-white"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Used to identify this template
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Button
+                      onClick={handleSaveTemplate}
+                      disabled={!templateId || !pdfFile || Object.keys(templateMapping.fields).length === 0 || isSaving}
+                      className="w-full bg-[#D4AF37] hover:bg-[#B8941F] text-slate-900 font-semibold"
+                    >
+                      {isSaving ? 'Saving...' : 'Save Template'}
+                    </Button>
+                    
+                    <Button
+                      onClick={async () => {
+                        if (!pdfUrl) return;
+                        
+                        try {
+                          // Create a new PDF document with form fields
+                          const response = await fetch('/api/generate-pdf', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              templateId,
+                              fields: templateMapping.fields,
+                              pdfUrl: pdfUrl.split('/').pop()
+                            })
+                          });
+                          
+                          if (!response.ok) {
+                            throw new Error('Failed to generate PDF');
+                          }
+                          
+                          // Get the PDF blob and create a download link
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${templateId || 'document'}.pdf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(url);
+                          
+                        } catch (error) {
+                          console.error('Error generating PDF:', error);
+                          alert('Failed to generate PDF. Please try again.');
+                        }
+                      }}
+                      disabled={!templateId || !pdfFile || Object.keys(templateMapping.fields).length === 0}
+                      variant="outline"
+                      className="w-full border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37]/10"
+                    >
+                      Download PDF
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="bg-slate-800/50 border-slate-700 p-6">
+                <h2 className="text-xl font-semibold text-[#D4AF37] mb-4">Mapped Fields</h2>
+                
+                {Object.keys(templateMapping.fields).length === 0 ? (
+                  <p className="text-gray-500 text-sm">No fields mapped yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.entries(templateMapping.fields).map(([fieldName, fieldMappings]) => {
+                      const mappingsArray = Array.isArray(fieldMappings) ? fieldMappings : [fieldMappings];
+                      return (
+                        <div key={fieldName} className="bg-slate-900/50 p-3 rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-medium text-white">
+                              {fieldName} 
+                              <span className="ml-2 text-xs bg-[#D4AF37] text-slate-900 px-2 py-0.5 rounded">
+                                {mappingsArray.length} location{mappingsArray.length > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => removeField(fieldName)}
+                              className="text-red-400 hover:text-red-300 text-sm"
+                            >
+                              Remove All ✕
+                            </button>
+                          </div>
+                          <div className="space-y-1">
+                            {mappingsArray.map((field, idx) => (
+                              <div key={idx} className="text-xs text-gray-400 pl-2">
+                                #{idx + 1}: Page {field.page + 1} • {field.type} • ({(field.xRatio * 100).toFixed(1)}%, {(field.yRatio * 100).toFixed(1)}%)
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showFieldModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <Card className="bg-slate-800 border-slate-700 p-6 max-w-md w-full">
+            <h3 className="text-xl font-semibold text-[#D4AF37] mb-4">Assign Field</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Field Name
+                </label>
+                <select
+                  value={selectedFieldName}
+                  onChange={(e) => setSelectedFieldName(e.target.value)}
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded px-3 py-2 text-white max-h-60 overflow-y-auto"
+                >
+                  <option value="">Select a field...</option>
+                  <optgroup label="Date Fields">
+                    <option value="todayDate">Today's Date (auto-fills current date)</option>
+                    <option value="currentDate">Current Date (same as Today's Date)</option>
+                    <option value="date">Date (same as Today's Date)</option>
+                  </optgroup>
+                  <optgroup label="Symbols">
+                    <option value="tick">Tick / Checkmark (✓)</option>
+                    <option value="checkmark">Checkmark (✓)</option>
+                    <option value="dash">Dash / Cancel (—)</option>
+                    <option value="cancel">Cancel (—)</option>
+                    <option value="cross">Cross (✗)</option>
+                  </optgroup>
+                  <optgroup label="Basic Info">
+                    <option value="legalName">Legal Name</option>
+                    <option value="bidderName">Bidder Name (same as Legal Name)</option>
+                    <option value="companyName">Company Name (same as Legal Name)</option>
+                    <option value="registrationNumber">Registration Number</option>
+                    <option value="companyType">Company Type</option>
+                    <option value="vatNumber">VAT Number</option>
+                    <option value="taxPin">Tax PIN</option>
+                    <option value="csdNumber">CSD Number</option>
+                  </optgroup>
+                  <optgroup label="Contact Info">
+                    <option value="physicalAddress">Physical Address</option>
+                    <option value="postalAddress">Postal Address</option>
+                    <option value="address">Address (Physical)</option>
+                    <option value="telephone">Telephone</option>
+                    <option value="phone">Phone (same as Telephone)</option>
+                    <option value="cellphone">Cellphone</option>
+                    <option value="fax">Fax</option>
+                    <option value="email">Email</option>
+                  </optgroup>
+                  <optgroup label="Directors">
+                    <option value="directorName">Director Name (First)</option>
+                    <option value="directorId">Director ID (First)</option>
+                    <option value="directorPosition">Director Position (First)</option>
+                    <option value="director1Name">Director 1 Name</option>
+                    <option value="director2Name">Director 2 Name</option>
+                  </optgroup>
+                  <optgroup label="Compliance">
+                    <option value="rsaResident">RSA Resident (Yes/No)</option>
+                    <option value="hasBranch">Has Branch (Yes/No)</option>
+                    <option value="accreditedRep">Accredited Rep (Yes/No)</option>
+                  </optgroup>
+                  <optgroup label="BEE Preferences">
+                    <option value="womenOwned">Women Owned %</option>
+                    <option value="youthOwned">Youth Owned %</option>
+                    <option value="pwdOwned">PWD Owned %</option>
+                    <option value="pointsClaimed">Points Claimed</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="signature">Signature</option>
+                    <option value="custom">Custom Field...</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              {selectedFieldName === 'custom' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Custom Field Name
+                  </label>
+                  <Input
+                    type="text"
+                    value={customFieldName}
+                    onChange={(e) => setCustomFieldName(e.target.value)}
+                    placeholder="Enter field name"
+                    className="bg-slate-900/50 border-slate-600 text-white"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Field Type
+                </label>
+                <select
+                  value={fieldType}
+                  onChange={(e) => setFieldType(e.target.value as FieldType)}
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded px-3 py-2 text-white"
+                >
+                  <option value="text">Text</option>
+                  <option value="signature">Signature</option>
+                  <option value="checkbox">Checkbox</option>
+                  <option value="date">Date</option>
+                  <option value="select">Dropdown</option>
+                  <option value="radio">Radio Buttons</option>
+                </select>
+              </div>
+
+              {(fieldType === 'select' || fieldType === 'radio') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Options (comma-separated)
+                  </label>
+                  <Input
+                    type="text"
+                    value={fieldOptions}
+                    onChange={(e) => setFieldOptions(e.target.value)}
+                    placeholder="e.g. Option 1, Option 2, Option 3"
+                    className="bg-slate-900/50 border-slate-600 text-white"
+                  />
+                </div>
+              )}
+
+              {fieldType === 'text' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Max Width Ratio (optional)
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={maxWidthRatio}
+                    onChange={(e) => setMaxWidthRatio(e.target.value)}
+                    placeholder="e.g. 0.4"
+                    className="bg-slate-900/50 border-slate-600 text-white"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Ratio of page width (0-1)
+                  </p>
+                </div>
+              )}
+
+              {fieldType === 'signature' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Width Ratio (optional)
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      value={widthRatio}
+                      onChange={(e) => setWidthRatio(e.target.value)}
+                      placeholder="e.g. 0.25"
+                      className="bg-slate-900/50 border-slate-600 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Height Ratio (optional)
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      value={heightRatio}
+                      onChange={(e) => setHeightRatio(e.target.value)}
+                      placeholder="e.g. 0.08"
+                      className="bg-slate-900/50 border-slate-600 text-white"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  onClick={() => {
+                    setShowFieldModal(false);
+                    setCurrentClick(null);
+                    setSelectedFieldName('');
+                    setCustomFieldName('');
+                    setMaxWidthRatio('');
+                    setWidthRatio('');
+                    setHeightRatio('');
+                  }}
+                  variant="outline"
+                  className="flex-1 border-slate-600"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleFieldAssignment}
+                  className="flex-1 bg-[#D4AF37] hover:bg-[#B8941F] text-slate-900"
+                >
+                  Assign Field
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Root Styles */
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --primary: #0F172A;
+  --secondary: #D4AF37;
+  --accent: #059669;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* React-PDF Styles */
+.react-pdf__Page {
+  margin: 0 auto;
+}
+
+.react-pdf__Page__textContent {
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+.react-pdf__Page__annotations {
+  border: 1px solid transparent;
+}
